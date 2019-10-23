@@ -142,17 +142,17 @@ int main(int argc, char** argv )
                 cv::filter2D(roiImg, filteredRoi, CV_32F, gaborKernel);
                 auto avgResponse = cv::mean(filteredRoi, coordinates);
 
-                std::cout << "Average response" << avgResponse[0] << std::endl;
+                // std::cout << "Average response" << avgResponse[0] << std::endl;
                 
                 // If the gabor response is too high the segment is not very flat
                 if (avgResponse[0] > slzGaborTh) {
                     cv::Mat inverted;
                     cv::bitwise_not(indices, inverted);
                     cv::Mat filteredImg;
-                    std::cout << "indices" << indices.size() << std::endl;
-                    std::cout << "inverted size" << inverted.size() << std::endl;
-                    std::cout << "classifiedImage size" << classifiedImage.size() << std::endl;
-                    std::cout << "filtered size" << filteredImg.size() << std::endl;
+                    // std::cout << "indices" << indices.size() << std::endl;
+                    // std::cout << "inverted size" << inverted.size() << std::endl;
+                    // std::cout << "classifiedImage size" << classifiedImage.size() << std::endl;
+                    // std::cout << "filtered size" << filteredImg.size() << std::endl;
                     if (classifiedImage.size().height == 0 && classifiedImage.size().width == 0) {
                         currentImg.copyTo(classifiedImage, inverted);
                     } else {
