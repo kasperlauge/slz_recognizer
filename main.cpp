@@ -22,6 +22,7 @@ int main(int argc, char** argv )
 
     for (int i = 0; i < images.size(); i++) {
         auto currentImg = images.at(i);
+        cv::Mat candidateIndices = cv::Mat::zeros(currentImg.size(), CV_8UC1);
         cv::Mat grayImg;
         cv::Mat detected_edges;
         cv::cvtColor(currentImg, grayImg, cv::COLOR_RGB2GRAY);
@@ -44,43 +45,8 @@ int main(int argc, char** argv )
         cv::circle(markers, cv::Point(5,5), 3, cv::Scalar(255), -1);
         cv::watershed(imgResult, markers);
 
-        // Generate random colors
-        std::vector<cv::Vec3b> colors;
-        for (size_t j = 0; j < contours.size(); j++)
-        {
-            int b = cv::theRNG().uniform(0, 256);
-            int g = cv::theRNG().uniform(0, 256);
-            int r = cv::theRNG().uniform(0, 256);
-            colors.push_back(cv::Vec3b((uchar)b, (uchar)g, (uchar)r));
-        }
-        // Create the result image
-        cv::Mat dst = cv::Mat::zeros(markers.size(), CV_8UC3);
-        // Fill labeled objects with random colors
-        for (int k = 0; k < markers.rows; k++)
-        {
-            for (int j = 0; j < markers.cols; j++)
-            {
-                int index = markers.at<int>(k,j);
-                if (index > 0 && index <= static_cast<int>(contours.size()))
-                {
-                    dst.at<cv::Vec3b>(k,j) = colors[index-1];
-                }
-            }
-        }
-
-        // std::cout << markers.col(400).t() << std::endl;
-
-        // for (int k = 0; k < markers.col(400).size().height; k++) {
-        //     cv::Vec3b color(255,255,255);
-        //     dst.col(400).row(k) = color;
-        // }
-
         // Now classify the different segment of the images
-        cv::Mat classifiedImage;
-
         // Filter out UAV and sky
-        cv::Mat classifiedImageBg;
-        cv::Mat slzMask = cv::Mat::zeros(markers.size(), CV_8UC1);
         cv::Vec3b averageSkyColor(178,178,178);
         cv::Vec3b averageUavColor(26,26,26);
 
@@ -94,15 +60,9 @@ int main(int argc, char** argv )
         auto distUav = cv::norm(averageSegment, averageUavColor);
 
         if (distSky < th || distUav < th) {
-            cv::Mat inverted;
-            cv::bitwise_not(bgIndices, inverted);
-            cv::Mat filteredImg;
-            if (classifiedImage.size().height == 0 && classifiedImage.size().width == 0) {
-                currentImg.copyTo(classifiedImage, inverted);
-            } else {
-                classifiedImage.copyTo(filteredImg, inverted);
-                filteredImg.copyTo(classifiedImage);
-            }
+            cv::Mat regions;
+            cv::bitwise_or(candidateIndices, bgIndices, regions);
+            regions.copyTo(candidateIndices);
         }
 
         // Process the rest of the contours
@@ -114,15 +74,9 @@ int main(int argc, char** argv )
             auto distSky = cv::norm(averageSegment, averageSkyColor);
             auto distUav = cv::norm(averageSegment, averageUavColor);
             if (distSky < th || distUav < th) {
-                cv::Mat inverted;
-                cv::bitwise_not(indices, inverted);
-                cv::Mat filteredImg;
-                if (classifiedImage.size().height == 0 && classifiedImage.size().width == 0) {
-                    currentImg.copyTo(classifiedImage, inverted);
-                } else {
-                    classifiedImage.copyTo(filteredImg, inverted);
-                    filteredImg.copyTo(classifiedImage);
-                }
+                cv::Mat regions;
+                cv::bitwise_or(candidateIndices, indices, regions);
+                regions.copyTo(candidateIndices);
             } else {
                 // Process non-background and non-UAV segments
                 int kernel_size = 9;
@@ -133,7 +87,6 @@ int main(int argc, char** argv )
 
                 auto gaborKernel = cv::getGaborKernel(cv::Size(kernel_size,kernel_size), sig, theta, lm, gm, ps, CV_32F);
 
-                // Create temporary image with all zero values except segment values
                 cv::Mat coordinates(indices);
                 cv::Mat roiImg;
                 grayImg.copyTo(roiImg, coordinates);
@@ -141,34 +94,19 @@ int main(int argc, char** argv )
                 cv::Mat filteredRoi;
                 cv::filter2D(roiImg, filteredRoi, CV_32F, gaborKernel);
                 auto avgResponse = cv::mean(filteredRoi, coordinates);
-
-                // std::cout << "Average response" << avgResponse[0] << std::endl;
                 
                 // If the gabor response is too high the segment is not very flat
                 if (avgResponse[0] > slzGaborTh) {
-                    cv::Mat inverted;
-                    cv::bitwise_not(indices, inverted);
-                    cv::Mat filteredImg;
-                    // std::cout << "indices" << indices.size() << std::endl;
-                    // std::cout << "inverted size" << inverted.size() << std::endl;
-                    // std::cout << "classifiedImage size" << classifiedImage.size() << std::endl;
-                    // std::cout << "filtered size" << filteredImg.size() << std::endl;
-                    if (classifiedImage.size().height == 0 && classifiedImage.size().width == 0) {
-                        currentImg.copyTo(classifiedImage, inverted);
-                    } else {
-                        classifiedImage.copyTo(filteredImg, inverted);
-                        filteredImg.copyTo(classifiedImage);
-                    }
+                    cv::Mat regions;
+                    cv::bitwise_or(candidateIndices, indices, regions);
+                    regions.copyTo(candidateIndices);
                 }
-                // std::ostringstream oss;
-                // oss << "img_roi_" << i << k;
-                // std::string windowName = oss.str();
-                // cv::imshow(windowName, filteredRoi);
             }
         }
         // End filter of UAV and sky
-        
-        processedImages.push_back(classifiedImage);
+        cv::Mat reverse;
+        cv::bitwise_not(candidateIndices, reverse);
+        processedImages.push_back(reverse);
     }
 
     for (int i = 0; i < images.size(); i++) {
@@ -179,7 +117,9 @@ int main(int argc, char** argv )
         std::ostringstream oss;
         oss << "img_" << i;
         std::string windowName = oss.str();
-        cv::imshow(windowName, processedImages.at(i));
+        cv::Mat fullImage;
+        images.at(i).copyTo(fullImage, processedImages.at(i));
+        cv::imshow(windowName, fullImage);
     }
 
     cv::waitKey(0);
