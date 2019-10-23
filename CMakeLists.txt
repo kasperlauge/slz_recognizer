@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+project( ros_recognizer )
+find_package( OpenCV REQUIRED )
+add_executable( ros_recognizer main.cpp )
+target_link_libraries( ros_recognizer ${OpenCV_LIBS} )
